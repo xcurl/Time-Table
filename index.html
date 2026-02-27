@@ -10,7 +10,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
 html { height: 100%; }
 
 body {
@@ -31,32 +30,34 @@ body.light {
   --txt:         #1a1008;
   --txt-soft:    rgba(30,20,10,0.45);
   --txt-accent:  #8a5200;
-  --glass-bg:    rgba(255,255,255,0.55);
-  --glass-bdr:   rgba(0,0,0,0.12);
-  --shine:       rgba(255,255,255,0.8);
-  --row-bg:      rgba(0,0,0,0.04);
-  --row-bdr:     rgba(0,0,0,0.09);
-  --active-bg:   rgba(0,0,0,0.09);
-  --active-bdr:  rgba(0,0,0,0.22);
-  --pill-bg:     rgba(0,0,0,0.08);
-  --pill-bdr:    rgba(0,0,0,0.15);
+  --glass-bg:    rgba(255,255,255,0.72);
+  --glass-bdr:   rgba(0,0,0,0.07);
+  --shine:       rgba(255,255,255,0.9);
+  --row-bg:      rgba(0,0,0,0.03);
+  --row-bdr:     rgba(0,0,0,0.07);
+  --active-bg:   rgba(0,0,0,0.07);
+  --active-bdr:  rgba(0,0,0,0.16);
+  --pill-bg:     rgba(0,0,0,0.07);
+  --pill-bdr:    rgba(0,0,0,0.10);
   --dot:         #b07000;
   --bar:         linear-gradient(to bottom,#c08000,#e0a000);
-  --tea-bg:      rgba(200,120,0,0.08);
-  --tea-bdr:     rgba(200,120,0,0.2);
+  --tea-bg:      rgba(200,120,0,0.06);
+  --tea-bdr:     rgba(200,120,0,0.14);
   --tea-txt:     #a06000;
-  --lun-bg:      rgba(180,40,80,0.07);
-  --lun-bdr:     rgba(180,40,80,0.18);
+  --lun-bg:      rgba(180,40,80,0.05);
+  --lun-bdr:     rgba(180,40,80,0.12);
   --lun-txt:     #aa3060;
-  --free-bg:     rgba(20,140,70,0.07);
-  --free-bdr:    rgba(20,140,70,0.16);
+  --free-bg:     rgba(20,140,70,0.05);
+  --free-bdr:    rgba(20,140,70,0.12);
   --free-txt:    #1a7a40;
+  --lab-bg:      rgba(80,100,220,0.07);
+  --lab-bdr:     rgba(80,100,220,0.18);
+  --lab-txt:     #4455cc;
   --bg-fallback: #f2ede8;
 }
+body.light { background: #f0ebe5; }
 
-body.light { background: #f2ede8; }
-
-/* ── DARK (Pure Black + Ultra Glass) ── */
+/* ── DARK ── */
 body.dark {
   --txt:         rgba(255,255,255,0.95);
   --txt-soft:    rgba(255,255,255,0.42);
@@ -81,6 +82,9 @@ body.dark {
   --free-bg:     rgba(40,180,100,0.06);
   --free-bdr:    rgba(40,180,100,0.14);
   --free-txt:    #60d890;
+  --lab-bg:      rgba(100,130,255,0.08);
+  --lab-bdr:     rgba(100,130,255,0.20);
+  --lab-txt:     #99aaff;
   --bg-fallback: #000000;
   background: #000000;
 }
@@ -92,21 +96,32 @@ body.dark {
 /* ── Layout ── */
 .wrap { display: flex; flex-direction: column; gap: 14px; }
 
-/* ── Glass effect — ultra transparent on black ── */
+/* ── Glass ── */
 .glass {
   background: var(--glass-bg);
   backdrop-filter: blur(32px) saturate(1.8) brightness(1.1);
   -webkit-backdrop-filter: blur(32px) saturate(1.8) brightness(1.1);
   border: 1px solid var(--glass-bdr);
   border-radius: 22px;
-  box-shadow:
-    0 4px 32px rgba(0,0,0,0.5),
-    0 1px 0 rgba(255,255,255,0.06) inset,
-    0 0 0 0.5px rgba(255,255,255,0.04) inset;
   transition: background 0.3s, border-color 0.3s;
+  position: relative;
 }
 
-/* Subtle top highlight streak */
+/* Dark mode: deep shadow + inner shine */
+body.dark .glass {
+  box-shadow:
+    0 4px 32px rgba(0,0,0,0.55),
+    0 1px 0 rgba(255,255,255,0.06) inset,
+    0 0 0 0.5px rgba(255,255,255,0.04) inset;
+}
+
+/* Light mode: soft, barely-there lift — no heavy shadows */
+body.light .glass {
+  box-shadow:
+    0 2px 10px rgba(0,0,0,0.07),
+    0 1px 0 rgba(255,255,255,0.95) inset;
+}
+
 .glass::before {
   content: '';
   position: absolute;
@@ -114,6 +129,9 @@ body.dark {
   border-radius: 22px;
   background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 50%);
   pointer-events: none;
+}
+body.light .glass::before {
+  background: linear-gradient(135deg, rgba(255,255,255,0.5) 0%, transparent 50%);
 }
 
 /* ── Header ── */
@@ -134,8 +152,13 @@ body.dark {
   font-weight: 800;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  box-shadow: inset 0 1px 0 var(--shine), 0 2px 12px rgba(0,0,0,0.3);
   transition: all .3s;
+}
+body.dark .day-pill, body.dark .theme-btn {
+  box-shadow: inset 0 1px 0 var(--shine), 0 2px 12px rgba(0,0,0,0.3);
+}
+body.light .day-pill, body.light .theme-btn {
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 .day-pill { padding:5px 13px; font-size:12px; letter-spacing:.4px; text-transform:uppercase; }
 .theme-btn { width:34px; height:34px; font-size:15px; display:flex; align-items:center; justify-content:center; border-radius:50%; border-color:var(--glass-bdr); }
@@ -143,9 +166,8 @@ body.dark {
 
 /* ── Period cards ── */
 .period-row { display:grid; grid-template-columns:1fr 1fr; gap:11px; }
-
 .pcard { padding:15px 14px; position:relative; overflow:hidden; animation:rise .4s ease both; }
-.pcard::after { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent); }
+body.dark .pcard::after { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent); }
 
 .pb-lbl { font-size:9px; font-weight:800; letter-spacing:1.3px; text-transform:uppercase; color:var(--txt-soft); display:flex; align-items:center; gap:4px; margin-bottom:7px; }
 .dot { width:5px; height:5px; border-radius:50%; background:var(--dot); animation:pulse 2s infinite; box-shadow:0 0 8px var(--dot), 0 0 16px rgba(255,200,80,0.4); }
@@ -153,6 +175,7 @@ body.dark {
 .pb-name.tea  { color:var(--tea-txt); }
 .pb-name.lun  { color:var(--lun-txt); }
 .pb-name.free { color:var(--free-txt); }
+.pb-name.lab  { color:var(--lab-txt); }
 .pb-name.dim  { color:var(--txt-soft); font-size:16px; }
 .pb-room { font-size:10px; font-weight:700; margin-top:4px; color:var(--txt-accent); }
 .pb-time { font-size:9px; font-weight:600; color:var(--txt-soft); margin-top:2px; }
@@ -170,12 +193,15 @@ body.dark {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
-.srow::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent); }
-.srow.active  { background:var(--active-bg); border-color:var(--active-bdr); box-shadow: 0 0 20px rgba(255,255,255,0.04); }
-.srow.active::after { content:''; position:absolute; left:0; top:18%; bottom:18%; width:3px; border-radius:3px; background:var(--bar); box-shadow: 0 0 8px rgba(255,200,80,0.6); }
+body.dark .srow::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent); }
+.srow.active  { background:var(--active-bg); border-color:var(--active-bdr); }
+body.dark .srow.active { box-shadow: 0 0 20px rgba(255,255,255,0.04); }
+.srow.active::after { content:''; position:absolute; left:0; top:18%; bottom:18%; width:3px; border-radius:3px; background:var(--bar); }
+body.dark .srow.active::after { box-shadow: 0 0 8px rgba(255,200,80,0.6); }
 .srow.tea  { background:var(--tea-bg);  border-color:var(--tea-bdr); }
 .srow.lun  { background:var(--lun-bg);  border-color:var(--lun-bdr); }
 .srow.free { background:var(--free-bg); border-color:var(--free-bdr); opacity:.75; }
+.srow.lab  { background:var(--lab-bg);  border-color:var(--lab-bdr); }
 
 .s-idx  { font-size:9px; font-weight:700; color:var(--txt-soft); min-width:12px; text-align:center; }
 .s-info { flex:1; display:flex; flex-direction:column; gap:1px; overflow:hidden; }
@@ -183,13 +209,29 @@ body.dark {
 .s-name.tea  { color:var(--tea-txt); }
 .s-name.lun  { color:var(--lun-txt); }
 .s-name.free { color:var(--free-txt); }
+.s-name.lab  { color:var(--lab-txt); }
 .s-room { font-size:9px; font-weight:700; color:var(--txt-accent); }
 .s-time { font-size:9px; font-weight:600; color:var(--txt-soft); text-align:right; white-space:nowrap; flex-shrink:0; }
+
 .badge {
   font-size:8px; font-weight:800;
+  border-radius:6px; padding:2px 6px; white-space:nowrap;
+}
+/* neutral badge (hours) */
+.badge.hrs {
   background: rgba(255,255,255,0.07);
   border:1px solid rgba(255,255,255,0.12);
-  color:var(--txt-soft); border-radius:6px; padding:2px 6px; white-space:nowrap;
+  color:var(--txt-soft);
+}
+body.light .badge.hrs {
+  background: rgba(0,0,0,0.06);
+  border-color: rgba(0,0,0,0.10);
+}
+/* lab badge */
+.badge.lab-tag {
+  background: var(--lab-bg);
+  border:1px solid var(--lab-bdr);
+  color: var(--lab-txt);
 }
 
 .refresh-btn {
@@ -201,7 +243,14 @@ body.dark {
   -webkit-tap-highlight-color:transparent; transition:all .15s;
   animation:rise .4s .15s ease both;
   backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+}
+body.dark .refresh-btn {
   box-shadow: 0 2px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+body.light .refresh-btn {
+  background: rgba(0,0,0,0.04);
+  border-color: rgba(0,0,0,0.07);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 .refresh-btn:active { background: rgba(255,255,255,0.10); color:var(--txt); transform:scale(.98); }
 
@@ -289,10 +338,40 @@ var TT = {
   6:[{n:'Seminar/Club'},{n:'Seminar/Club'},{n:'Tea Break'},{n:'Seminar/Club'},{n:'Seminar/Club'},{n:'Lunch Break'},{n:'Seminar/Club'},{n:'Seminar/Club'},{n:'Seminar/Club'}]
 };
 
+function isLab(name) { return name && name.toLowerCase().indexOf('lab') !== -1; }
 function nm() { var d=new Date(); return d.getHours()*60+d.getMinutes(); }
 function slotAt(m) { for(var i=0;i<SLOTS.length;i++) if(m>=SLOTS[i].s&&m<SLOTS[i].e) return i; return -1; }
-function typeOf(e) { if(!e) return 's'; if(e.n==='Tea Break') return 'tea'; if(e.n==='Lunch Break') return 'lun'; if(e.n==='Free Hour') return 'free'; return 's'; }
-function nc(e,dim) { var t=typeOf(e); if(t==='tea') return 'tea'; if(t==='lun') return 'lun'; if(t==='free') return 'free'; return dim?'dim':''; }
+function typeOf(e) {
+  if(!e) return 's';
+  if(e.n==='Tea Break') return 'tea';
+  if(e.n==='Lunch Break') return 'lun';
+  if(e.n==='Free Hour') return 'free';
+  if(isLab(e.n)) return 'lab';
+  return 's';
+}
+function nc(e, dim) {
+  var t = typeOf(e);
+  if(t==='tea') return 'tea';
+  if(t==='lun') return 'lun';
+  if(t==='free') return 'free';
+  if(t==='lab') return 'lab';
+  return dim ? 'dim' : '';
+}
+
+// Find how many consecutive slots a period spans starting from idx
+function groupEnd(row, idx) {
+  var e = row[idx];
+  var j = idx + 1;
+  while(j < SLOTS.length && row[j] && row[j].n === e.n && (row[j].r||'') === (e.r||'')) j++;
+  return j - 1; // inclusive end index
+}
+
+// Build time label for a span from:to
+function spanLabel(from, to) {
+  var start = SLOTS[from].l.split('–')[0].trim();
+  var end   = SLOTS[to].l.split('–')[1].trim();
+  return start + '–' + end;
+}
 
 function init() {
   var now=new Date(), day=now.getDay(), mins=nm();
@@ -316,54 +395,71 @@ function init() {
     cn.className='pb-name free';
   } else if (si>=0 && row[si]) {
     var e=row[si];
-    cn.textContent=e.n; cr.textContent=e.r||''; ct.textContent=SLOTS[si].l;
+    var siEnd = groupEnd(row, si);
+    cn.textContent=e.n; cr.textContent=e.r||'';
+    ct.textContent = spanLabel(si, siEnd);
     cn.className='pb-name '+nc(e,false);
   }
 
-  var ni=-1, s0=(si===-1&&mins<510)?0:(si>=0?si+1:-1);
-  if (s0>=0) for(var i=s0;i<SLOTS.length;i++) if(row[i]){ni=i;break;}
+  // ── Next: find next distinct group ──
+  var ni=-1;
+  var s0 = (si===-1&&mins<510) ? 0 : (si>=0 ? groupEnd(row,si)+1 : -1);
+  if (s0>=0) {
+    for(var i=s0; i<SLOTS.length; i++) {
+      if(row[i]) { ni=i; break; }
+    }
+  }
   if (ni>=0) {
     var ne=row[ni];
-    nn.textContent=ne.n; nr.textContent=ne.r||''; nt.textContent=SLOTS[ni].l;
+    var niEnd = groupEnd(row, ni);
+    nn.textContent=ne.n; nr.textContent=ne.r||'';
+    nt.textContent = spanLabel(ni, niEnd);
     nn.className='pb-name '+nc(ne,true);
   } else {
     nn.textContent='No more'; nr.textContent=''; nt.textContent="That's all!";
   }
 
+  // ── Schedule list ──
   var sl=document.getElementById('sl'); sl.innerHTML='';
   if (day===0) {
     sl.innerHTML='<div style="color:var(--txt-soft);font-size:13px;padding:6px 0">No classes on Sunday 🎉</div>';
     return;
   }
-  var groups=[], idx=0;
-  while (idx<SLOTS.length) {
+
+  var idx=0, pNum=1;
+  while (idx < SLOTS.length) {
     var e=row[idx]; if(!e){idx++;continue;}
-    var j=idx+1;
-    while(j<SLOTS.length&&row[j]&&row[j].n===e.n&&(row[j].r||'')===(e.r||'')) j++;
-    groups.push({e:e,from:idx,to:j-1,count:j-idx}); idx=j;
-  }
-  var pNum=1;
-  groups.forEach(function(g) {
-    var tc=typeOf(g.e), isAct=(si>=g.from&&si<=g.to);
-    var pidx=(tc==='tea'||tc==='lun')?'·':String(pNum);
-    if(tc==='s'||tc==='free') pNum++;
+    var endIdx = groupEnd(row, idx);
+    var count = endIdx - idx + 1;
+    var tc = typeOf(e);
+    var isAct = (si>=idx && si<=endIdx);
+    var pidx = (tc==='tea'||tc==='lun') ? '·' : String(pNum);
+    if(tc==='s'||tc==='free'||tc==='lab') pNum++;
+
+    var tStart = SLOTS[idx].l.split('–')[0].trim();
+    var tFull  = spanLabel(idx, endIdx);
+
+    // Build badges HTML
+    var badges = '';
+    if(count > 1) badges += '<span class="badge hrs">'+count+' hrs</span>';
+    if(tc==='lab') badges += '<span class="badge lab-tag">Lab</span>';
+
     var div=document.createElement('div');
     div.className='srow '+tc+(isAct?' active':'');
-    var tStart=SLOTS[g.from].l.split('–')[0].trim();
-    var tLabel=g.count>1?(tStart+'–'+SLOTS[g.to].l.split('–')[1].trim()):SLOTS[g.from].l;
     div.innerHTML=
       '<span class="s-idx">'+pidx+'</span>'+
       '<span class="s-info">'+
-        '<span class="s-name '+tc+'">'+g.e.n+(g.count>1?' <span class="badge">'+g.count+' hrs</span>':'')+'</span>'+
-        (g.e.r?'<span class="s-room">'+g.e.r+'</span>':'')+
+        '<span class="s-name '+tc+'">'+e.n+' '+badges+'</span>'+
+        (e.r?'<span class="s-room">'+e.r+'</span>':'')+
       '</span>'+
       '<span class="s-time">'+tStart+'</span>';
     sl.appendChild(div);
-  });
+    idx = endIdx + 1;
+  }
 }
 
 // ── Boot ──────────────────────────────────────────────────
-applyTheme('dark'); // Always start in dark mode
+applyTheme('dark');
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
