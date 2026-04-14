@@ -186,11 +186,23 @@ body.dark .srow.active::after { box-shadow:0 0 8px rgba(255,200,80,.6); }
 .s-name.tea { color:var(--tea-txt); } .s-name.lun { color:var(--lun-txt); }
 .s-name.free { color:var(--free-txt); } .s-name.lab { color:var(--lab-txt); }
 .s-room { font-size:9px; font-weight:700; color:var(--txt-accent); }
+.s-note { font-size:9px; font-weight:600; color:var(--txt-soft); margin-top:1px; }
 .s-time { font-size:9px; font-weight:600; color:var(--txt-soft); text-align:right; white-space:nowrap; flex-shrink:0; }
 .badge { font-size:8px; font-weight:800; border-radius:6px; padding:2px 6px; white-space:nowrap; }
 .badge.hrs { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12); color:var(--txt-soft); }
 body.light .badge.hrs { background:rgba(0,0,0,.06); border-color:rgba(0,0,0,.10); }
 .badge.lab-tag { background:var(--lab-bg); border:1px solid var(--lab-bdr); color:var(--lab-txt); }
+.srow-main { display:flex; align-items:center; gap:10px; width:100%; transition:transform .18s ease; }
+.srow.swiped .srow-main { transform:translateX(-138px); }
+.srow-actions {
+  position:absolute; right:8px; top:50%; transform:translateY(-50%);
+  display:flex; gap:6px; opacity:0; pointer-events:none; transition:opacity .18s ease;
+}
+.srow.swiped .srow-actions { opacity:1; pointer-events:auto; }
+.srow-act {
+  border:1px solid var(--row-bdr); background:var(--pill-bg); color:var(--txt);
+  border-radius:8px; font-size:10px; font-weight:800; padding:6px 8px; cursor:pointer;
+}
 
 /* ── ALL TABLE: Days = ROWS, Slots = COLUMNS ── */
 .all-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; animation:rise .3s ease both; }
@@ -293,7 +305,7 @@ var SLOTS=[
   {l:'01:30–02:25',s:810,e:865},{l:'02:25–03:20',s:865,e:920},
   {l:'03:20–04:20',s:920,e:980}
 ];
-var TT={
+var BASE_TT={
   1:[{n:'CNSL Lab'},{n:'CNSL Lab'},{n:'Tea Break'},{n:'PE-4',r:'Room 201'},{n:'ASDD'},{n:'Lunch Break'},{n:'CNS'},{n:'CC'},{n:'Free Hour'}],
   2:[{n:'CNS'},{n:'CC'},{n:'Tea Break'},{n:'OE-2'},{n:'PE-5',r:'Room 112'},{n:'Lunch Break'},{n:'WT'},{n:'CCL Lab'},{n:'CCL Lab'}],
   3:[{n:'CC'},{n:'ASDD'},{n:'Tea Break'},{n:'PE-5',r:'Room 114'},{n:'PE-4',r:'Room 114'},{n:'Lunch Break'},{n:'WT'},{n:'Free Hour'},{n:'Free Hour'}],
@@ -301,9 +313,18 @@ var TT={
   5:[{n:'WTL Lab'},{n:'WTL Lab'},{n:'Tea Break'},{n:'Adv Placement'},{n:'Adv Placement'},{n:'Lunch Break'},{n:'PE-4',r:'Room 101'},{n:'ASDD'},{n:'Free Hour'}],
   6:[{n:'Seminar/Club'},{n:'Seminar/Club'},{n:'Tea Break'},{n:'Seminar/Club'},{n:'Seminar/Club'},{n:'Lunch Break'},{n:'Seminar/Club'},{n:'Seminar/Club'},{n:'Seminar/Club'}]
 };
+var TT=cloneJSON(BASE_TT);
 
 var selectedDay=null; // null=today live, 'all'=all table, 0-6=specific day
 var prevMins=-1;
+var CACHE_DB='tt-cache-db';
+var CACHE_STORE='kv';
+var CACHE_KEY='tt-cache-v1';
+var META_KEY='tt-cache-meta-v1';
+var GIST_CFG_KEY='tt-gist-config-v3';
+var PUBLIC_GIST_ID='c93bf56c7d5d9dc2339c6201d6acdbf9';
+var PUBLIC_GIST_FILENAME='timetable-cache.json';
+var syncTimer=null;
 
 function todayDay(){return new Date().getDay();}
 function nm(){var d=new Date();return d.getHours()*60+d.getMinutes();}
@@ -319,6 +340,279 @@ function typeOf(e){
 function nc(e,dim){var t=typeOf(e);if(t==='tea')return 'tea';if(t==='lun')return 'lun';if(t==='free')return 'free';if(t==='lab')return 'lab';return dim?'dim':'';}
 function groupEnd(row,idx){var e=row[idx],j=idx+1;while(j<SLOTS.length&&row[j]&&row[j].n===e.n&&(row[j].r||'')===(e.r||''))j++;return j-1;}
 function spanLabel(f,t){return SLOTS[f].l.split('–')[0].trim()+'–'+SLOTS[t].l.split('–')[1].trim();}
+function cloneJSON(v){return JSON.parse(JSON.stringify(v));}
+function isObj(v){return v&&typeof v==='object'&&!Array.isArray(v);}
+function cleanEntry(e){
+  if(!isObj(e)||typeof e.n!=='string')return null;
+  var n=e.n.trim();
+  if(!n)return null;
+  var out={n:n};
+  if(typeof e.r==='string'&&e.r.trim())out.r=e.r.trim();
+  if(typeof e.note==='string'&&e.note.trim())out.note=e.note.trim();
+  return out;
+}
+function eqEntry(a,b){
+  return (a&&a.n||'')===(b&&b.n||'') && (a&&a.r||'')===(b&&b.r||'') && (a&&a.note||'')===(b&&b.note||'');
+}
+function buildOverrides(){
+  var out={};
+  for(var d=1;d<=6;d++){
+    for(var i=0;i<SLOTS.length;i++){
+      if(!eqEntry(TT[d][i],BASE_TT[d][i])){
+        if(!out[d])out[d]={};
+        out[d][i]=cloneJSON(TT[d][i]);
+      }
+    }
+  }
+  return out;
+}
+function applyOverrides(ov){
+  var out=cloneJSON(BASE_TT);
+  if(!isObj(ov))return out;
+  for(var d=1;d<=6;d++){
+    if(!isObj(ov[d]))continue;
+    for(var i=0;i<SLOTS.length;i++){
+      var ce=cleanEntry(ov[d][i]);
+      if(ce)out[d][i]=ce;
+    }
+  }
+  return out;
+}
+function sanitizeTT(raw){
+  if(!isObj(raw))return null;
+  var out=cloneJSON(BASE_TT);
+  for(var d=1;d<=6;d++){
+    if(!Array.isArray(raw[d])||raw[d].length!==SLOTS.length)continue;
+    var next=[];
+    for(var i=0;i<SLOTS.length;i++){
+      var ce=cleanEntry(raw[d][i]);
+      next.push(ce||cloneJSON(BASE_TT[d][i]));
+    }
+    out[d]=next;
+  }
+  return out;
+}
+function openCacheDB(){
+  return new Promise(function(resolve,reject){
+    if(!window.indexedDB){reject(new Error('indexedDB unavailable'));return;}
+    var req=indexedDB.open(CACHE_DB,1);
+    req.onupgradeneeded=function(ev){
+      var db=ev.target.result;
+      if(!db.objectStoreNames.contains(CACHE_STORE))db.createObjectStore(CACHE_STORE);
+    };
+    req.onsuccess=function(){resolve(req.result);};
+    req.onerror=function(){reject(req.error||new Error('db open failed'));};
+  });
+}
+function idbGet(key){
+  return openCacheDB().then(function(db){
+    return new Promise(function(resolve,reject){
+      var tx=db.transaction(CACHE_STORE,'readonly');
+      var st=tx.objectStore(CACHE_STORE);
+      var rq=st.get(key);
+      rq.onsuccess=function(){resolve(rq.result);};
+      rq.onerror=function(){reject(rq.error||new Error('get failed'));};
+    }).finally(function(){db.close();});
+  });
+}
+function idbSet(key,val){
+  return openCacheDB().then(function(db){
+    return new Promise(function(resolve,reject){
+      var tx=db.transaction(CACHE_STORE,'readwrite');
+      tx.oncomplete=function(){resolve();};
+      tx.onerror=function(){reject(tx.error||new Error('set failed'));};
+      tx.objectStore(CACHE_STORE).put(val,key);
+    }).finally(function(){db.close();});
+  });
+}
+async function loadTTFromCache(){
+  var raw=null;
+  var meta=null;
+  try{
+    raw=await idbGet(CACHE_KEY);
+    meta=await idbGet(META_KEY);
+  }catch(_e){
+    try{
+      var ls=localStorage.getItem(CACHE_KEY);
+      raw=ls?JSON.parse(ls):null;
+      var ms=localStorage.getItem(META_KEY);
+      meta=ms?JSON.parse(ms):null;
+    }catch(_e2){raw=null;}
+  }
+  var clean=sanitizeTT(raw);
+  if(clean)TT=clean;
+  if(isObj(meta)&&typeof meta.updatedAt==='number')window.__ttUpdatedAt=meta.updatedAt;
+}
+async function persistTT(updatedAt){
+  var snap=cloneJSON(TT);
+  var meta={updatedAt:typeof updatedAt==='number'?updatedAt:Date.now()};
+  window.__ttUpdatedAt=meta.updatedAt;
+  try{await idbSet(CACHE_KEY,snap);}catch(_e){}
+  try{await idbSet(META_KEY,meta);}catch(_e1){}
+  try{localStorage.setItem(CACHE_KEY,JSON.stringify(snap));}catch(_e2){}
+  try{localStorage.setItem(META_KEY,JSON.stringify(meta));}catch(_e3){}
+}
+function gistConfig(){
+  try{
+    var cfg=JSON.parse(localStorage.getItem(GIST_CFG_KEY)||'null');
+    var token=(cfg&&cfg.token)?String(cfg.token):'';
+    var id=PUBLIC_GIST_ID;
+    if(!id&&!token)return null;
+    return {
+      id:id,
+      token:token,
+      filename:String((cfg&&cfg.filename)||PUBLIC_GIST_FILENAME)
+    };
+  }catch(_e){return null;}
+}
+function saveGistConfig(cfg, persistToken){
+  try{
+    var payload={
+      filename:cfg.filename||'timetable-cache.json'
+    };
+    if(persistToken&&cfg.token)payload.token=cfg.token;
+    localStorage.setItem(GIST_CFG_KEY,JSON.stringify(payload));
+  }catch(_e){}
+}
+async function ensureGist(cfg){
+  if(cfg.id)return cfg;
+  if(!cfg.token)return null;
+  try{
+    var payload={description:'Timetable Sync Cache',public:false,files:{}};
+    payload.files[cfg.filename]={content:JSON.stringify({overrides:buildOverrides(),updatedAt:window.__ttUpdatedAt||Date.now()})};
+    var res=await fetch('https://api.github.com/gists',{
+      method:'POST',
+      headers:{
+        'Authorization':'Bearer '+cfg.token,
+        'Accept':'application/vnd.github+json',
+        'Content-Type':'application/json'
+      },
+      body:JSON.stringify(payload)
+    });
+    if(!res.ok)return null;
+    var out=await res.json();
+    if(!out||!out.id)return null;
+    cfg.id=String(out.id);
+    saveGistConfig(cfg,false);
+    return cfg;
+  }catch(_e){return null;}
+}
+async function pullFromGist(){
+  var cfg=gistConfig(); if(!cfg)return;
+  if(!cfg.id&&!cfg.token)return;
+  cfg=await ensureGist(cfg); if(!cfg||!cfg.id)return;
+  try{
+    var headers={'Accept':'application/vnd.github+json'};
+    if(cfg.token)headers.Authorization='Bearer '+cfg.token;
+    var res=await fetch('https://api.github.com/gists/'+encodeURIComponent(cfg.id),{headers:headers});
+    if(!res.ok)return;
+    var body=await res.json();
+    var file=body&&body.files&&body.files[cfg.filename];
+    if(!file&&body&&body.files){
+      var keys=Object.keys(body.files);
+      if(keys.length)file=body.files[keys[0]];
+    }
+    if(!file||typeof file.content!=='string')return;
+    var parsed=JSON.parse(file.content);
+    var remoteMeta=isObj(parsed)?parsed:null;
+    var remoteTT=remoteMeta&&remoteMeta.overrides?applyOverrides(remoteMeta.overrides):sanitizeTT(remoteMeta&&remoteMeta.tt?remoteMeta.tt:parsed);
+    if(!remoteTT)return;
+    var remoteUpdated=isObj(remoteMeta)&&typeof remoteMeta.updatedAt==='number'?remoteMeta.updatedAt:0;
+    var localUpdated=typeof window.__ttUpdatedAt==='number'?window.__ttUpdatedAt:0;
+    if(remoteUpdated&&remoteUpdated<=localUpdated)return;
+    TT=remoteTT;
+    if(remoteUpdated)window.__ttUpdatedAt=remoteUpdated;
+    await persistTT(remoteUpdated||Date.now());
+    render();
+  }catch(_e){}
+}
+function queuePushToGist(){
+  if(syncTimer)clearTimeout(syncTimer);
+  syncTimer=setTimeout(pushToGist,1500);
+}
+async function pushToGist(){
+  var cfg=gistConfig(); if(!cfg)return;
+  if(!cfg.token)return;
+  cfg=await ensureGist(cfg); if(!cfg||!cfg.id)return;
+  try{
+    await fetch('https://api.github.com/gists/'+encodeURIComponent(cfg.id),{
+      method:'PATCH',
+      headers:{
+        'Authorization':'Bearer '+cfg.token,
+        'Accept':'application/vnd.github+json',
+        'Content-Type':'application/json'
+      },
+      body:JSON.stringify({files:(function(){var o={};o[cfg.filename]={content:JSON.stringify({overrides:buildOverrides(),updatedAt:window.__ttUpdatedAt||Date.now()})};return o;})()})
+    });
+  }catch(_e){}
+}
+function editPeriod(day,from,to,entry){
+  var nextName=prompt('Edit subject/activity',entry.n||'');
+  if(nextName===null)return;
+  nextName=nextName.trim();
+  if(!nextName)return;
+  var nextRoom=prompt('Room (optional)',entry.r||'');
+  if(nextRoom===null)return;
+  var nextNote=prompt('Note (optional)',entry.note||'');
+  if(nextNote===null)return;
+  var updated={n:nextName};
+  if(nextRoom.trim())updated.r=nextRoom.trim();
+  if(nextNote.trim())updated.note=nextNote.trim();
+  for(var i=from;i<=to;i++)TT[day][i]=cloneJSON(updated);
+  persistTT();
+  queuePushToGist();
+  render();
+}
+function moveGroup(day,from,to,dir){
+  var row=TT[day]; if(!row)return;
+  var groups=[],i=0;
+  while(i<SLOTS.length){
+    var e=row[i]; if(!e){i++;continue;}
+    var end=groupEnd(row,i);
+    groups.push({from:i,to:end,entries:cloneJSON(row.slice(i,end+1))});
+    i=end+1;
+  }
+  var gi=-1;
+  for(i=0;i<groups.length;i++)if(groups[i].from===from&&groups[i].to===to){gi=i;break;}
+  if(gi<0)return;
+  var ti=gi+dir;
+  if(ti<0||ti>=groups.length)return;
+  var temp=groups[gi]; groups[gi]=groups[ti]; groups[ti]=temp;
+  var rebuilt=[];
+  groups.forEach(function(g){rebuilt=rebuilt.concat(g.entries);});
+  if(rebuilt.length!==SLOTS.length)return;
+  TT[day]=rebuilt;
+  persistTT();
+  queuePushToGist();
+  render();
+}
+var openedSwipeRow=null;
+function bindSwipeToEdit(el,day,from,to,entry){
+  var sx=0,sy=0,tracking=false;
+  var closeRow=function(){el.classList.remove('swiped'); if(openedSwipeRow===el)openedSwipeRow=null;};
+  var openRow=function(){
+    if(openedSwipeRow&&openedSwipeRow!==el)openedSwipeRow.classList.remove('swiped');
+    el.classList.add('swiped'); openedSwipeRow=el;
+  };
+  el.addEventListener('pointerdown',function(ev){
+    sx=ev.clientX;sy=ev.clientY;tracking=true;
+  },{passive:true});
+  el.addEventListener('pointerup',function(ev){
+    if(!tracking)return;
+    tracking=false;
+    var dx=ev.clientX-sx,dy=ev.clientY-sy;
+    if(Math.abs(dy)>36)return;
+    if(dx<-45){openRow();return;}
+    if(dx>35){closeRow();}
+  },{passive:true});
+  el.addEventListener('pointercancel',function(){tracking=false;},{passive:true});
+  el.addEventListener('click',function(ev){
+    if(el.classList.contains('swiped')&&!ev.target.classList.contains('srow-act'))closeRow();
+  });
+  el.querySelector('.srow-act.edit').addEventListener('click',function(ev){ev.stopPropagation();editPeriod(day,from,to,entry);});
+  el.querySelector('.srow-act.up').addEventListener('click',function(ev){ev.stopPropagation();moveGroup(day,from,to,-1);});
+  el.querySelector('.srow-act.down').addEventListener('click',function(ev){ev.stopPropagation();moveGroup(day,from,to,1);});
+}
 
 // ── Dropdown ──────────────────────────────────────────────
 function buildDropdown(){
@@ -406,8 +700,9 @@ function render(){
     if(tc==='lab')badges+='<span class="badge lab-tag">Lab</span>';
     var div=document.createElement('div');
     div.className='srow '+tc+(isAct?' active':'');
-    div.innerHTML='<span class="s-idx">'+pidx+'</span><span class="s-info"><span class="s-name '+tc+'">'+e.n+' '+badges+'</span>'+(e.r?'<span class="s-room">'+e.r+'</span>':'')+'</span><span class="s-time">'+tStart+'</span>';
+    div.innerHTML='<div class="srow-main"><span class="s-idx">'+pidx+'</span><span class="s-info"><span class="s-name '+tc+'">'+e.n+' '+badges+'</span>'+(e.r?'<span class="s-room">'+e.r+'</span>':'')+(e.note?'<span class="s-note">'+e.note+'</span>':'')+'</span><span class="s-time">'+tStart+'</span></div><div class="srow-actions"><button class="srow-act edit">Edit</button><button class="srow-act up">↑</button><button class="srow-act down">↓</button></div>';
     addClickEffect(div);
+    bindSwipeToEdit(div,displayDay,idx,endIdx,e);
     sl.appendChild(div);
     idx=endIdx+1;
   }
@@ -482,8 +777,28 @@ function tick(){
 }
 
 applyTheme('dark');
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',render);
-else render();
+window.TTSync={
+  configure:function(token, gistId, filename, persistToken){
+    if(!token||typeof token!=='string')return false;
+    var cfg={token:token.trim(),id:PUBLIC_GIST_ID,filename:filename?String(filename).trim():PUBLIC_GIST_FILENAME};
+    if(!cfg.token)return false;
+    saveGistConfig(cfg,!!persistToken);
+    pullFromGist();
+    return true;
+  },
+  status:function(){
+    var cfg=gistConfig();
+    return cfg?{connected:!!(cfg.id||cfg.token),gistId:cfg.id,filename:cfg.filename,canPush:!!cfg.token}:null;
+  }
+};
+async function initApp(){
+  render();
+  await loadTTFromCache();
+  render();
+  pullFromGist();
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);
+else initApp();
 setInterval(tick,1000);
 </script>
 </body>
