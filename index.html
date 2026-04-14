@@ -468,6 +468,28 @@ function gistConfig(){
 function saveGistConfig(cfg, persistToken){
   try{
     var payload={
+    var envToken=readEnvToken();
+    var token=(cfg&&cfg.token)?String(cfg.token):envToken;
+    if(!token)return null;
+    return {
+      id:cfg&&cfg.id?String(cfg.id):'',
+      token:token,
+      filename:String((cfg&&cfg.filename)||'timetable-cache.json')
+    };
+  }catch(_e){return null;}
+}
+function readEnvToken(){
+  try{
+    if(window.__TT_ENV__&&typeof window.__TT_ENV__.TT_Gist==='string'&&window.__TT_ENV__.TT_Gist.trim())return window.__TT_ENV__.TT_Gist.trim();
+    if(window.TT_Gist&&typeof window.TT_Gist==='string'&&window.TT_Gist.trim())return window.TT_Gist.trim();
+    if(window.process&&window.process.env&&typeof window.process.env.TT_Gist==='string'&&window.process.env.TT_Gist.trim())return window.process.env.TT_Gist.trim();
+  }catch(_e){}
+  return '';
+}
+function saveGistConfig(cfg, persistToken){
+  try{
+    var payload={
+      id:cfg.id||'',
       filename:cfg.filename||'timetable-cache.json'
     };
     if(persistToken&&cfg.token)payload.token=cfg.token;
@@ -480,6 +502,9 @@ async function ensureGist(cfg){
   try{
     var payload={description:'Timetable Sync Cache',public:false,files:{}};
     payload.files[cfg.filename]={content:JSON.stringify({overrides:buildOverrides(),updatedAt:window.__ttUpdatedAt||Date.now()})};
+  try{
+    var payload={description:'Timetable Sync Cache',public:false,files:{}};
+    payload.files[cfg.filename]={content:JSON.stringify({tt:TT,updatedAt:window.__ttUpdatedAt||Date.now()})};
     var res=await fetch('https://api.github.com/gists',{
       method:'POST',
       headers:{
@@ -516,6 +541,18 @@ async function pullFromGist(){
     var parsed=JSON.parse(file.content);
     var remoteMeta=isObj(parsed)?parsed:null;
     var remoteTT=remoteMeta&&remoteMeta.overrides?applyOverrides(remoteMeta.overrides):sanitizeTT(remoteMeta&&remoteMeta.tt?remoteMeta.tt:parsed);
+  cfg=await ensureGist(cfg); if(!cfg||!cfg.id)return;
+  try{
+    var res=await fetch('https://api.github.com/gists/'+encodeURIComponent(cfg.id),{
+      headers:{'Authorization':'Bearer '+cfg.token,'Accept':'application/vnd.github+json'}
+    });
+    if(!res.ok)return;
+    var body=await res.json();
+    var file=body&&body.files&&body.files[cfg.filename];
+    if(!file||typeof file.content!=='string')return;
+    var parsed=JSON.parse(file.content);
+    var remoteMeta=isObj(parsed)?parsed:null;
+    var remoteTT=sanitizeTT(remoteMeta&&remoteMeta.tt?remoteMeta.tt:parsed);
     if(!remoteTT)return;
     var remoteUpdated=isObj(remoteMeta)&&typeof remoteMeta.updatedAt==='number'?remoteMeta.updatedAt:0;
     var localUpdated=typeof window.__ttUpdatedAt==='number'?window.__ttUpdatedAt:0;
@@ -543,6 +580,7 @@ async function pushToGist(){
         'Content-Type':'application/json'
       },
       body:JSON.stringify({files:(function(){var o={};o[cfg.filename]={content:JSON.stringify({overrides:buildOverrides(),updatedAt:window.__ttUpdatedAt||Date.now()})};return o;})()})
+      body:JSON.stringify({files:(function(){var o={};o[cfg.filename]={content:JSON.stringify({tt:TT,updatedAt:window.__ttUpdatedAt||Date.now()})};return o;})()})
     });
   }catch(_e){}
 }
@@ -558,6 +596,8 @@ function editPeriod(day,from,to,entry){
   var updated={n:nextName};
   if(nextRoom.trim())updated.r=nextRoom.trim();
   if(nextNote.trim())updated.note=nextNote.trim();
+  var updated={n:nextName};
+  if(nextRoom.trim())updated.r=nextRoom.trim();
   for(var i=from;i<=to;i++)TT[day][i]=cloneJSON(updated);
   persistTT();
   queuePushToGist();
@@ -594,6 +634,8 @@ function bindSwipeToEdit(el,day,from,to,entry){
     if(openedSwipeRow&&openedSwipeRow!==el)openedSwipeRow.classList.remove('swiped');
     el.classList.add('swiped'); openedSwipeRow=el;
   };
+function bindSwipeToEdit(el,day,from,to,entry){
+  var sx=0,sy=0,tracking=false;
   el.addEventListener('pointerdown',function(ev){
     sx=ev.clientX;sy=ev.clientY;tracking=true;
   },{passive:true});
@@ -612,6 +654,9 @@ function bindSwipeToEdit(el,day,from,to,entry){
   el.querySelector('.srow-act.edit').addEventListener('click',function(ev){ev.stopPropagation();editPeriod(day,from,to,entry);});
   el.querySelector('.srow-act.up').addEventListener('click',function(ev){ev.stopPropagation();moveGroup(day,from,to,-1);});
   el.querySelector('.srow-act.down').addEventListener('click',function(ev){ev.stopPropagation();moveGroup(day,from,to,1);});
+    if(dx<-55&&Math.abs(dy)<36)editPeriod(day,from,to,entry);
+  },{passive:true});
+  el.addEventListener('pointercancel',function(){tracking=false;},{passive:true});
 }
 
 // ── Dropdown ──────────────────────────────────────────────
@@ -781,6 +826,7 @@ window.TTSync={
   configure:function(token, gistId, filename, persistToken){
     if(!token||typeof token!=='string')return false;
     var cfg={token:token.trim(),id:PUBLIC_GIST_ID,filename:filename?String(filename).trim():PUBLIC_GIST_FILENAME};
+    var cfg={token:token.trim(),id:gistId?String(gistId).trim():'',filename:filename?String(filename).trim():'timetable-cache.json'};
     if(!cfg.token)return false;
     saveGistConfig(cfg,!!persistToken);
     pullFromGist();
@@ -789,6 +835,17 @@ window.TTSync={
   status:function(){
     var cfg=gistConfig();
     return cfg?{connected:!!(cfg.id||cfg.token),gistId:cfg.id,filename:cfg.filename,canPush:!!cfg.token}:null;
+  configureFromEnv:function(gistId, filename){
+    var token=readEnvToken();
+    if(!token)return false;
+    var cfg={token:token,id:gistId?String(gistId).trim():'',filename:filename?String(filename).trim():'timetable-cache.json'};
+    saveGistConfig(cfg,false);
+    pullFromGist();
+    return true;
+  },
+  status:function(){
+    var cfg=gistConfig();
+    return cfg?{connected:!!cfg.token,fromEnv:!!readEnvToken(),gistId:cfg.id||'(auto-create on first sync)',filename:cfg.filename}:null;
   }
 };
 async function initApp(){
