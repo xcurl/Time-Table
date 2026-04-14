@@ -186,11 +186,23 @@ body.dark .srow.active::after { box-shadow:0 0 8px rgba(255,200,80,.6); }
 .s-name.tea { color:var(--tea-txt); } .s-name.lun { color:var(--lun-txt); }
 .s-name.free { color:var(--free-txt); } .s-name.lab { color:var(--lab-txt); }
 .s-room { font-size:9px; font-weight:700; color:var(--txt-accent); }
+.s-note { font-size:9px; font-weight:600; color:var(--txt-soft); margin-top:1px; }
 .s-time { font-size:9px; font-weight:600; color:var(--txt-soft); text-align:right; white-space:nowrap; flex-shrink:0; }
 .badge { font-size:8px; font-weight:800; border-radius:6px; padding:2px 6px; white-space:nowrap; }
 .badge.hrs { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12); color:var(--txt-soft); }
 body.light .badge.hrs { background:rgba(0,0,0,.06); border-color:rgba(0,0,0,.10); }
 .badge.lab-tag { background:var(--lab-bg); border:1px solid var(--lab-bdr); color:var(--lab-txt); }
+.srow-main { display:flex; align-items:center; gap:10px; width:100%; transition:transform .18s ease; }
+.srow.swiped .srow-main { transform:translateX(-138px); }
+.srow-actions {
+  position:absolute; right:8px; top:50%; transform:translateY(-50%);
+  display:flex; gap:6px; opacity:0; pointer-events:none; transition:opacity .18s ease;
+}
+.srow.swiped .srow-actions { opacity:1; pointer-events:auto; }
+.srow-act {
+  border:1px solid var(--row-bdr); background:var(--pill-bg); color:var(--txt);
+  border-radius:8px; font-size:10px; font-weight:800; padding:6px 8px; cursor:pointer;
+}
 
 /* ── ALL TABLE: Days = ROWS, Slots = COLUMNS ── */
 .all-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; animation:rise .3s ease both; }
@@ -310,6 +322,8 @@ var CACHE_STORE='kv';
 var CACHE_KEY='tt-cache-v1';
 var META_KEY='tt-cache-meta-v1';
 var GIST_CFG_KEY='tt-gist-config-v3';
+var PUBLIC_GIST_ID='c93bf56c7d5d9dc2339c6201d6acdbf9';
+var PUBLIC_GIST_FILENAME='timetable-cache.json';
 var syncTimer=null;
 
 function todayDay(){return new Date().getDay();}
@@ -334,6 +348,34 @@ function cleanEntry(e){
   if(!n)return null;
   var out={n:n};
   if(typeof e.r==='string'&&e.r.trim())out.r=e.r.trim();
+  if(typeof e.note==='string'&&e.note.trim())out.note=e.note.trim();
+  return out;
+}
+function eqEntry(a,b){
+  return (a&&a.n||'')===(b&&b.n||'') && (a&&a.r||'')===(b&&b.r||'') && (a&&a.note||'')===(b&&b.note||'');
+}
+function buildOverrides(){
+  var out={};
+  for(var d=1;d<=6;d++){
+    for(var i=0;i<SLOTS.length;i++){
+      if(!eqEntry(TT[d][i],BASE_TT[d][i])){
+        if(!out[d])out[d]={};
+        out[d][i]=cloneJSON(TT[d][i]);
+      }
+    }
+  }
+  return out;
+}
+function applyOverrides(ov){
+  var out=cloneJSON(BASE_TT);
+  if(!isObj(ov))return out;
+  for(var d=1;d<=6;d++){
+    if(!isObj(ov[d]))continue;
+    for(var i=0;i<SLOTS.length;i++){
+      var ce=cleanEntry(ov[d][i]);
+      if(ce)out[d][i]=ce;
+    }
+  }
   return out;
 }
 function sanitizeTT(raw){
@@ -413,6 +455,19 @@ async function persistTT(updatedAt){
 function gistConfig(){
   try{
     var cfg=JSON.parse(localStorage.getItem(GIST_CFG_KEY)||'null');
+    var token=(cfg&&cfg.token)?String(cfg.token):'';
+    var id=PUBLIC_GIST_ID;
+    if(!id&&!token)return null;
+    return {
+      id:id,
+      token:token,
+      filename:String((cfg&&cfg.filename)||PUBLIC_GIST_FILENAME)
+    };
+  }catch(_e){return null;}
+}
+function saveGistConfig(cfg, persistToken){
+  try{
+    var payload={
     var envToken=readEnvToken();
     var token=(cfg&&cfg.token)?String(cfg.token):envToken;
     if(!token)return null;
@@ -443,6 +498,10 @@ function saveGistConfig(cfg, persistToken){
 }
 async function ensureGist(cfg){
   if(cfg.id)return cfg;
+  if(!cfg.token)return null;
+  try{
+    var payload={description:'Timetable Sync Cache',public:false,files:{}};
+    payload.files[cfg.filename]={content:JSON.stringify({overrides:buildOverrides(),updatedAt:window.__ttUpdatedAt||Date.now()})};
   try{
     var payload={description:'Timetable Sync Cache',public:false,files:{}};
     payload.files[cfg.filename]={content:JSON.stringify({tt:TT,updatedAt:window.__ttUpdatedAt||Date.now()})};
@@ -465,6 +524,23 @@ async function ensureGist(cfg){
 }
 async function pullFromGist(){
   var cfg=gistConfig(); if(!cfg)return;
+  if(!cfg.id&&!cfg.token)return;
+  cfg=await ensureGist(cfg); if(!cfg||!cfg.id)return;
+  try{
+    var headers={'Accept':'application/vnd.github+json'};
+    if(cfg.token)headers.Authorization='Bearer '+cfg.token;
+    var res=await fetch('https://api.github.com/gists/'+encodeURIComponent(cfg.id),{headers:headers});
+    if(!res.ok)return;
+    var body=await res.json();
+    var file=body&&body.files&&body.files[cfg.filename];
+    if(!file&&body&&body.files){
+      var keys=Object.keys(body.files);
+      if(keys.length)file=body.files[keys[0]];
+    }
+    if(!file||typeof file.content!=='string')return;
+    var parsed=JSON.parse(file.content);
+    var remoteMeta=isObj(parsed)?parsed:null;
+    var remoteTT=remoteMeta&&remoteMeta.overrides?applyOverrides(remoteMeta.overrides):sanitizeTT(remoteMeta&&remoteMeta.tt?remoteMeta.tt:parsed);
   cfg=await ensureGist(cfg); if(!cfg||!cfg.id)return;
   try{
     var res=await fetch('https://api.github.com/gists/'+encodeURIComponent(cfg.id),{
@@ -493,6 +569,7 @@ function queuePushToGist(){
 }
 async function pushToGist(){
   var cfg=gistConfig(); if(!cfg)return;
+  if(!cfg.token)return;
   cfg=await ensureGist(cfg); if(!cfg||!cfg.id)return;
   try{
     await fetch('https://api.github.com/gists/'+encodeURIComponent(cfg.id),{
@@ -502,6 +579,7 @@ async function pushToGist(){
         'Accept':'application/vnd.github+json',
         'Content-Type':'application/json'
       },
+      body:JSON.stringify({files:(function(){var o={};o[cfg.filename]={content:JSON.stringify({overrides:buildOverrides(),updatedAt:window.__ttUpdatedAt||Date.now()})};return o;})()})
       body:JSON.stringify({files:(function(){var o={};o[cfg.filename]={content:JSON.stringify({tt:TT,updatedAt:window.__ttUpdatedAt||Date.now()})};return o;})()})
     });
   }catch(_e){}
@@ -513,6 +591,11 @@ function editPeriod(day,from,to,entry){
   if(!nextName)return;
   var nextRoom=prompt('Room (optional)',entry.r||'');
   if(nextRoom===null)return;
+  var nextNote=prompt('Note (optional)',entry.note||'');
+  if(nextNote===null)return;
+  var updated={n:nextName};
+  if(nextRoom.trim())updated.r=nextRoom.trim();
+  if(nextNote.trim())updated.note=nextNote.trim();
   var updated={n:nextName};
   if(nextRoom.trim())updated.r=nextRoom.trim();
   for(var i=from;i<=to;i++)TT[day][i]=cloneJSON(updated);
@@ -520,6 +603,37 @@ function editPeriod(day,from,to,entry){
   queuePushToGist();
   render();
 }
+function moveGroup(day,from,to,dir){
+  var row=TT[day]; if(!row)return;
+  var groups=[],i=0;
+  while(i<SLOTS.length){
+    var e=row[i]; if(!e){i++;continue;}
+    var end=groupEnd(row,i);
+    groups.push({from:i,to:end,entries:cloneJSON(row.slice(i,end+1))});
+    i=end+1;
+  }
+  var gi=-1;
+  for(i=0;i<groups.length;i++)if(groups[i].from===from&&groups[i].to===to){gi=i;break;}
+  if(gi<0)return;
+  var ti=gi+dir;
+  if(ti<0||ti>=groups.length)return;
+  var temp=groups[gi]; groups[gi]=groups[ti]; groups[ti]=temp;
+  var rebuilt=[];
+  groups.forEach(function(g){rebuilt=rebuilt.concat(g.entries);});
+  if(rebuilt.length!==SLOTS.length)return;
+  TT[day]=rebuilt;
+  persistTT();
+  queuePushToGist();
+  render();
+}
+var openedSwipeRow=null;
+function bindSwipeToEdit(el,day,from,to,entry){
+  var sx=0,sy=0,tracking=false;
+  var closeRow=function(){el.classList.remove('swiped'); if(openedSwipeRow===el)openedSwipeRow=null;};
+  var openRow=function(){
+    if(openedSwipeRow&&openedSwipeRow!==el)openedSwipeRow.classList.remove('swiped');
+    el.classList.add('swiped'); openedSwipeRow=el;
+  };
 function bindSwipeToEdit(el,day,from,to,entry){
   var sx=0,sy=0,tracking=false;
   el.addEventListener('pointerdown',function(ev){
@@ -529,6 +643,17 @@ function bindSwipeToEdit(el,day,from,to,entry){
     if(!tracking)return;
     tracking=false;
     var dx=ev.clientX-sx,dy=ev.clientY-sy;
+    if(Math.abs(dy)>36)return;
+    if(dx<-45){openRow();return;}
+    if(dx>35){closeRow();}
+  },{passive:true});
+  el.addEventListener('pointercancel',function(){tracking=false;},{passive:true});
+  el.addEventListener('click',function(ev){
+    if(el.classList.contains('swiped')&&!ev.target.classList.contains('srow-act'))closeRow();
+  });
+  el.querySelector('.srow-act.edit').addEventListener('click',function(ev){ev.stopPropagation();editPeriod(day,from,to,entry);});
+  el.querySelector('.srow-act.up').addEventListener('click',function(ev){ev.stopPropagation();moveGroup(day,from,to,-1);});
+  el.querySelector('.srow-act.down').addEventListener('click',function(ev){ev.stopPropagation();moveGroup(day,from,to,1);});
     if(dx<-55&&Math.abs(dy)<36)editPeriod(day,from,to,entry);
   },{passive:true});
   el.addEventListener('pointercancel',function(){tracking=false;},{passive:true});
@@ -620,7 +745,7 @@ function render(){
     if(tc==='lab')badges+='<span class="badge lab-tag">Lab</span>';
     var div=document.createElement('div');
     div.className='srow '+tc+(isAct?' active':'');
-    div.innerHTML='<span class="s-idx">'+pidx+'</span><span class="s-info"><span class="s-name '+tc+'">'+e.n+' '+badges+'</span>'+(e.r?'<span class="s-room">'+e.r+'</span>':'')+'</span><span class="s-time">'+tStart+'</span>';
+    div.innerHTML='<div class="srow-main"><span class="s-idx">'+pidx+'</span><span class="s-info"><span class="s-name '+tc+'">'+e.n+' '+badges+'</span>'+(e.r?'<span class="s-room">'+e.r+'</span>':'')+(e.note?'<span class="s-note">'+e.note+'</span>':'')+'</span><span class="s-time">'+tStart+'</span></div><div class="srow-actions"><button class="srow-act edit">Edit</button><button class="srow-act up">↑</button><button class="srow-act down">↓</button></div>';
     addClickEffect(div);
     bindSwipeToEdit(div,displayDay,idx,endIdx,e);
     sl.appendChild(div);
@@ -700,12 +825,16 @@ applyTheme('dark');
 window.TTSync={
   configure:function(token, gistId, filename, persistToken){
     if(!token||typeof token!=='string')return false;
+    var cfg={token:token.trim(),id:PUBLIC_GIST_ID,filename:filename?String(filename).trim():PUBLIC_GIST_FILENAME};
     var cfg={token:token.trim(),id:gistId?String(gistId).trim():'',filename:filename?String(filename).trim():'timetable-cache.json'};
     if(!cfg.token)return false;
     saveGistConfig(cfg,!!persistToken);
     pullFromGist();
     return true;
   },
+  status:function(){
+    var cfg=gistConfig();
+    return cfg?{connected:!!(cfg.id||cfg.token),gistId:cfg.id,filename:cfg.filename,canPush:!!cfg.token}:null;
   configureFromEnv:function(gistId, filename){
     var token=readEnvToken();
     if(!token)return false;
